@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 
 st.set_page_config(
-    page_title="Detección de Objetos en Tiempo Real",
+    page_title="Detección de Solo Personas",
     page_icon="🔍",
     layout="wide"
 )
@@ -21,8 +21,8 @@ def load_model():
         st.error(f"❌ Error al cargar el modelo: {str(e)}")
         return None
 
-st.title("🔍 Detección de Objetos en Imágenes")
-st.markdown("Esta aplicación utiliza YOLOv5 para detectar objetos en imágenes capturadas con tu cámara.")
+st.title("🔍 Detección de Personas")
+st.markdown("Esta aplicación detecta únicamente personas usando YOLO.")
 
 with st.spinner("Cargando modelo YOLOv5..."):
     model = load_model()
@@ -40,21 +40,17 @@ if model:
     if picture:
         bytes_data = picture.getvalue()
 
-        # Decodificar con Pillow en lugar de cv2 (evita dependencia libGL)
-        #pil_img  = Image.open(io.BytesIO(bytes_data)).convert("RGB")
-        #np_img   = np.array(pil_img)   # array RGB
-
         pil_img = Image.open(io.BytesIO(bytes_data)).convert("RGB")
-        np_img  = np.array(pil_img)[..., ::-1]  # RGB → BGR para que YOLO procese bien
+        np_img  = np.array(pil_img)[..., ::-1]
 
-        
-        with st.spinner("Detectando objetos..."):
+        with st.spinner("Detectando personas..."):
             try:
                 results = model(
                     np_img,
                     conf=conf_threshold,
                     iou=iou_threshold,
-                    max_det=int(max_det)
+                    max_det=int(max_det),
+                    classes=[0]  # 👈 SOLO PERSONAS
                 )
             except Exception as e:
                 st.error(f"Error durante la detección: {str(e)}")
@@ -62,8 +58,8 @@ if model:
 
         result    = results[0]
         boxes     = result.boxes
-        annotated = result.plot()              # devuelve BGR numpy array
-        annotated_rgb = annotated[:, :, ::-1]  # BGR → RGB sin cv2
+        annotated = result.plot()
+        annotated_rgb = annotated[:, :, ::-1]
 
         col1, col2 = st.columns(2)
 
@@ -72,22 +68,26 @@ if model:
             st.image(annotated_rgb, use_container_width=True)
 
         with col2:
-            st.subheader("Objetos detectados")
+            st.subheader("Personas detectadas")
             if boxes is not None and len(boxes) > 0:
-                label_names    = model.names
                 category_count = {}
                 category_conf  = {}
 
                 for box in boxes:
                     cat  = int(box.cls.item())
                     conf = float(box.conf.item())
+
+                    # SOLO PERSONAS (por seguridad extra)
+                    if cat != 0:
+                        continue
+
                     category_count[cat] = category_count.get(cat, 0) + 1
                     category_conf.setdefault(cat, []).append(conf)
 
                 data = [
                     {
-                        "Categoría":          label_names[cat],
-                        "Cantidad":           count,
+                        "Categoría": "Persona 👤",
+                        "Cantidad": count,
                         "Confianza promedio": f"{np.mean(category_conf[cat]):.2f}"
                     }
                     for cat, count in category_count.items()
@@ -97,11 +97,10 @@ if model:
                 st.dataframe(df, use_container_width=True)
                 st.bar_chart(df.set_index("Categoría")["Cantidad"])
             else:
-                st.info("No se detectaron objetos con los parámetros actuales.")
-                st.caption("Prueba a reducir el umbral de confianza en la barra lateral.")
+                st.info("No se detectaron personas.")
 else:
-    st.error("No se pudo cargar el modelo. Verifica las dependencias e inténtalo nuevamente.")
+    st.error("No se pudo cargar el modelo.")
     st.stop()
 
 st.markdown("---")
-st.caption("**Acerca de la aplicación**: Detección de objetos con YOLOv5 + Streamlit + PyTorch.")
+st.caption("Detección de personas con YOLOv5 + Streamlit + PyTorch.")
